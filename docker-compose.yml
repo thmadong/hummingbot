@@ -1,10 +1,10 @@
 services:
   hummingbot:
     container_name: hummingbot
-    image: hummingbot/hummingbot:latest
-    # build: # Uncomment this build section and comment image to build Hummingbot locally
-    #   context: .
-    #   dockerfile: Dockerfile
+    # image: hummingbot/hummingbot:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
     volumes:
       - ./conf:/home/hummingbot/conf
       - ./conf/connectors:/home/hummingbot/conf/connectors
@@ -30,8 +30,8 @@ services:
     init: true
     # By default the container runs the interactive Hummingbot client — `docker attach hummingbot`.
     # To drive the container with `hbot` commands instead (`make link-cli`, then `hbot <command>`, or
-    # `docker exec -it hummingbot hbot <command>`), run it as an idle "hbot host" — uncomment:
-    #   command: tail -f /dev/null
+    # `docker exec -it hummingbot hbot <command>`), run it as an idle "hbot host":
+    command: tail -f /dev/null
     # Or make one dedicated bot the container's main process:
     #   command: hbot start <config> --foreground
   #  environment:
