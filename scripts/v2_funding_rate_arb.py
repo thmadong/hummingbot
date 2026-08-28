@@ -98,6 +98,15 @@ class FundingRateArbitrage(StrategyV2Base):
         self.active_funding_arbitrages = {}
         self.stopped_funding_arbitrages = {token: [] for token in self.config.tokens}
 
+    def on_tick(self):
+        # 覆写父类 on_tick，去掉 "if self.controllers" 的门槛。本脚本是简单脚本（controllers 为空），
+        # 若不覆写，create_actions_proposal / stop_actions_proposal 永远不会被调用，策略 ready 后空转、不开仓。
+        self.update_executors_info()
+        if self.market_data_provider.ready and not self._is_stop_triggered:
+            executor_actions = self.determine_executor_actions()
+            for action in executor_actions:
+                self.executor_orchestrator.execute_action(action)
+
     def start(self, clock: Clock, timestamp: float) -> None:
         """
         Start the strategy.
