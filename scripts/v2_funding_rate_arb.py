@@ -282,17 +282,27 @@ class FundingRateArbitrage(StrategyV2Base):
             self.active_funding_arbitrages[token]["funding_payments"].append(funding_payment_completed_event)
 
     def get_position_executors_config(self, token, connector_1, connector_2, trade_side):
+        trading_pair_1 = self.get_trading_pair_for_connector(token, connector_1)
+        trading_pair_2 = self.get_trading_pair_for_connector(token, connector_2)
         price = self.market_data_provider.get_price_by_type(
             connector_name=connector_1,
-            trading_pair=self.get_trading_pair_for_connector(token, connector_1),
+            trading_pair=trading_pair_1,
             price_type=PriceType.MidPrice
         )
         position_amount = self.config.position_size_quote / price
 
+        # 两个交易所的最小下单步长不同（币安 BTC 为 0.001，Hyperliquid 更细）。若让 executor 各自量化，
+        # 会导致两边 base 数量不一致、无法形成中性对冲。这里取各自量化后的最小值（即较粗步长）对齐，
+        # 保证两边下单量完全一致。
+        position_amount = min(
+            self.market_data_provider.quantize_order_amount(connector_1, trading_pair_1, position_amount),
+            self.market_data_provider.quantize_order_amount(connector_2, trading_pair_2, position_amount),
+        )
+
         position_executor_config_1 = PositionExecutorConfig(
             timestamp=self.current_timestamp,
             connector_name=connector_1,
-            trading_pair=self.get_trading_pair_for_connector(token, connector_1),
+            trading_pair=trading_pair_1,
             side=trade_side,
             amount=position_amount,
             leverage=self.config.leverage,
@@ -301,7 +311,7 @@ class FundingRateArbitrage(StrategyV2Base):
         position_executor_config_2 = PositionExecutorConfig(
             timestamp=self.current_timestamp,
             connector_name=connector_2,
-            trading_pair=self.get_trading_pair_for_connector(token, connector_2),
+            trading_pair=trading_pair_2,
             side=TradeType.BUY if trade_side == TradeType.SELL else TradeType.SELL,
             amount=position_amount,
             leverage=self.config.leverage,
