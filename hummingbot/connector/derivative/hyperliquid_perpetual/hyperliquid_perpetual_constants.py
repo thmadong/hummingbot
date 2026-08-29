@@ -10,7 +10,7 @@ MIN_NOTIONAL_SIZE = 10
 # Attach a Foundation builder code to mainnet orders (omitted on testnet/vault). The fee only takes
 # effect if the user has approved this builder in Condor; otherwise it is 0 bps.
 # See HyperliquidPerpetualDerivative._initialize_builder_fee.
-BUILDER_SUPPORTED = True
+BUILDER_SUPPORTED = False
 
 # Foundation builder address (set BUILDER_SUPPORTED = False to omit the builder field entirely).
 FOUNDATION_BUILDER_ADDRESS = "0x10BA451e6439Efc6a17dc20d21121Aa838100705"
