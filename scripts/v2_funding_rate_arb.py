@@ -213,6 +213,8 @@ class FundingRateArbitrage(StrategyV2Base):
             if token not in self.active_funding_arbitrages:
                 funding_info_report = self.get_funding_info_by_token(token)
                 best_combination = self.get_most_profitable_combination(funding_info_report)
+                if best_combination is None:
+                    continue
                 connector_1, connector_2, trade_side, expected_profitability = best_combination
                 if expected_profitability >= self.config.min_funding_rate_profitability:
                     current_profitability = self.get_current_profitability_after_fees(
@@ -332,6 +334,9 @@ class FundingRateArbitrage(StrategyV2Base):
                 best_combination = self.get_most_profitable_combination(funding_info_report)
                 for connector_name, info in funding_info_report.items():
                     token_info[f"{connector_name} Rate (%)"] = self.get_normalized_funding_rate_in_seconds(funding_info_report, connector_name) * self.funding_profitability_interval * 100
+                all_funding_info.append(token_info)
+                if best_combination is None:
+                    continue
                 connector_1, connector_2, side, funding_rate_diff = best_combination
                 profitability_after_fees = self.get_current_profitability_after_fees(token, connector_1, connector_2, side)
                 best_paths_info["Best Path"] = f"{connector_1}_{connector_2}"
@@ -345,7 +350,6 @@ class FundingRateArbitrage(StrategyV2Base):
                 best_paths_info["Min to Funding 1"] = time_to_next_funding_info_c1 / 60
                 best_paths_info["Min to Funding 2"] = time_to_next_funding_info_c2 / 60
 
-                all_funding_info.append(token_info)
                 all_best_paths.append(best_paths_info)
             funding_rate_status.append(f"\n\n\nMin Funding Rate Profitability: {self.config.min_funding_rate_profitability:.2%}")
             funding_rate_status.append(f"Profitability to Take Profit: {self.config.profitability_to_take_profit:.2%}\n")
