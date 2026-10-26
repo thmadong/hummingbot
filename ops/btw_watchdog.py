@@ -29,10 +29,25 @@ SMTP 凭据来源（按优先级）
 4. `/home/linuxuser/thmadong/quant/.env`（复用已有的 QUANT_ALERT_SMTP_* 配置）
 只读这几个键，不会把整份 .env 载入环境。
 
+可调参数（阈值 / 收件人）
+------------------------
+优先级：命令行 > 进程环境变量 > 环境文件 > 内置默认。
+
+| 参数 | 命令行 | 环境变量 | 默认 |
+|---|---|---|---|
+| 回撤阈值 | `--threshold 0.15` | `HBOT_WATCHDOG_THRESHOLD` | `0.20` |
+| 收件人 | `--mail-to a@b.com` | `HBOT_ALERT_MAIL_TO` | `2194667913@qq.com` |
+
+改 `~/.config/hbot-alert.env` 即可，不需要动 cron：
+
+    HBOT_WATCHDOG_THRESHOLD=0.15
+    HBOT_ALERT_MAIL_TO=2194667913@qq.com
+
 用法
 ----
     python3 ops/btw_watchdog.py                 # 正常巡检（cron 用这个）
     python3 ops/btw_watchdog.py --dry-run       # 只判定，不停不发信
+    python3 ops/btw_watchdog.py --show-config   # 打印生效的阈值/收件人/SMTP
     python3 ops/btw_watchdog.py --test-email    # 发一封测试邮件后退出
     python3 ops/btw_watchdog.py --reset-baseline
 """
@@ -61,16 +76,19 @@ SPOT_TICKER_URL = "https://sapi.asterdex.com/api/v3/ticker/bookTicker?symbol=BTW
 PERP_TICKER_URL = "https://fapi.asterdex.com/fapi/v1/ticker/price?symbol=BTWUSDT"
 
 DEFAULT_MAIL_TO = "2194667913@qq.com"
+DEFAULT_THRESHOLD = 0.20
 BASE_ASSET = "BTW"
 QUOTE_ASSET = "USDT"
 
-SMTP_KEYS = ("HOST", "PORT", "USER", "PASSWORD", "MAIL_TO")
+# 可调参数。优先级：命令行 > 进程环境变量 > 环境文件 > 内置默认值。
+# 环境文件按 ENV_FILES 顺序查找，同一个键以先出现者为准。
 ENV_NAMES = {
     "HOST": ("HBOT_ALERT_SMTP_HOST", "QUANT_ALERT_SMTP_HOST"),
     "PORT": ("HBOT_ALERT_SMTP_PORT", "QUANT_ALERT_SMTP_PORT"),
     "USER": ("HBOT_ALERT_SMTP_USER", "QUANT_ALERT_SMTP_USER"),
     "PASSWORD": ("HBOT_ALERT_SMTP_PASSWORD", "QUANT_ALERT_SMTP_PASSWORD"),
     "MAIL_TO": ("HBOT_ALERT_MAIL_TO", "QUANT_ALERT_MAIL_TO"),
+    "THRESHOLD": ("HBOT_WATCHDOG_THRESHOLD",),
 }
 ENV_FILES = [
     Path(os.environ.get("HBOT_ALERT_ENV_FILE", "")) if os.environ.get("HBOT_ALERT_ENV_FILE") else None,
@@ -151,7 +169,8 @@ def base_price() -> Optional[float]:
 
 # --------------------------------------------------------------------------- email
 
-def load_smtp_config() -> Dict[str, str]:
+def load_config() -> Dict[str, str]:
+    """合并出有效配置：进程环境变量优先，其次按顺序扫描环境文件（同一个键先出现者为准）。"""
     config: Dict[str, str] = {}
     for key, env_names in ENV_NAMES.items():
         for name in env_names:
@@ -160,24 +179,28 @@ def load_smtp_config() -> Dict[str, str]:
                 config[key] = value
                 break
 
-    if len(config) < len(SMTP_KEYS):
+    missing = [key for key in ENV_NAMES if key not in config]
+    if missing:
+        wanted = {name for names in ENV_NAMES.values() for name in names}
         for path in ENV_FILES:
+            if not missing:
+                break
             if path is None or not path.exists():
                 continue
-            wanted = {name for names in ENV_NAMES.values() for name in names}
             for line in path.read_text(encoding="utf-8", errors="ignore").splitlines():
                 line = line.strip()
                 if not line or line.startswith("#") or "=" not in line:
                     continue
                 name, value = line.split("=", 1)
+                value = value.strip().strip('"').strip("'")
                 if name in wanted and value:
                     for key, names in ENV_NAMES.items():
                         if name in names and key not in config:
                             config[key] = value
-            if len(config) == len(SMTP_KEYS):
-                break
+            missing = [key for key in ENV_NAMES if key not in config]
 
     config.setdefault("MAIL_TO", DEFAULT_MAIL_TO)
+    config.setdefault("THRESHOLD", str(DEFAULT_THRESHOLD))
     return config
 
 
@@ -299,22 +322,43 @@ def build_alert_body(account: Dict[str, Any], baseline: float, threshold: float)
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="BTW 做市账户回撤看门狗")
-    parser.add_argument("--threshold", type=float, default=0.20, help="回撤阈值，默认 0.20 即 20%%")
+    parser.add_argument("--threshold", type=float, default=None,
+                        help=f"回撤阈值（0.20 = 20%%）。优先取 $HBOT_WATCHDOG_THRESHOLD，默认 {DEFAULT_THRESHOLD}")
     parser.add_argument("--baseline", type=float, default=None, help="指定基准权益（USDT）")
-    parser.add_argument("--mail-to", default=None, help=f"告警收件人，默认 {DEFAULT_MAIL_TO}")
+    parser.add_argument("--mail-to", default=None,
+                        help=f"告警收件人。优先取 $HBOT_ALERT_MAIL_TO，默认 {DEFAULT_MAIL_TO}")
     parser.add_argument("--dry-run", action="store_true", help="只判定，不停止机器人也不发信")
     parser.add_argument("--test-email", action="store_true", help="发一封测试邮件后退出")
     parser.add_argument("--reset-baseline", action="store_true", help="用当前权益重设基准")
+    parser.add_argument("--show-config", action="store_true", help="打印生效的阈值/收件人/SMTP（密码打码）后退出")
     args = parser.parse_args()
 
-    config = load_smtp_config()
+    config = load_config()
     if args.mail_to:
         config["MAIL_TO"] = args.mail_to
+    threshold = args.threshold if args.threshold is not None else float(config["THRESHOLD"])
+
+    if args.show_config:
+        print(json.dumps({
+            "threshold": threshold,
+            "mail_to": config.get("MAIL_TO"),
+            "threshold_source": ("cli" if args.threshold is not None
+                                 else "$HBOT_WATCHDOG_THRESHOLD" if os.environ.get("HBOT_WATCHDOG_THRESHOLD")
+                                 else "env file / default"),
+            "smtp_host": config.get("HOST"),
+            "smtp_port": config.get("PORT"),
+            "smtp_user": config.get("USER"),
+            "smtp_password": "***" if config.get("PASSWORD") else "(unset)",
+            "env_files": [str(p) for p in ENV_FILES if p is not None],
+            "state_file": str(STATE_FILE),
+        }, indent=2, ensure_ascii=False))
+        return 0
 
     if args.test_email:
         ok = send_mail(
             "[HBOT] 看门狗测试邮件",
-            f"这是一封测试邮件，发送时间 {now_iso()}。\n收到即代表告警通道可用。",
+            f"这是一封测试邮件，发送时间 {now_iso()}。\n收到即代表告警通道可用。"
+            f"\n当前阈值 {threshold * 100:.0f}%，收件人 {config.get('MAIL_TO')}。",
             config,
         )
         return 0 if ok else 1
@@ -347,7 +391,7 @@ def main() -> int:
     already_triggered = bool(state.get("triggered_at"))
 
     # 回撤回到阈值一半以下时复位，允许下一次触发（避免永久静默）
-    if already_triggered and drawdown < args.threshold / 2:
+    if already_triggered and drawdown < threshold / 2:
         state.pop("triggered_at", None)
         state.pop("triggered_equity", None)
         write_state(state)
@@ -359,13 +403,14 @@ def main() -> int:
         "equity": round(equity, 2),
         "baseline": round(baseline, 2),
         "drawdown": round(drawdown, 4),
+        "threshold": threshold,
         "usdt": round(account["usdt"], 2),
         "base": round(account["base"], 2),
         "price": account.get("price"),
         "other_assets": account.get("other_assets"),
     }
 
-    if drawdown < args.threshold or already_triggered:
+    if drawdown < threshold or already_triggered:
         log(summary)
         return 0
 
@@ -376,7 +421,7 @@ def main() -> int:
     stop_result = stop_bot()
     send_mail(
         f"[HBOT] BTW 做市触发熔断：回撤 {drawdown * 100:.1f}%",
-        build_alert_body(account, baseline, args.threshold),
+        build_alert_body(account, baseline, threshold),
         config,
     )
     state["triggered_at"] = now_iso()
