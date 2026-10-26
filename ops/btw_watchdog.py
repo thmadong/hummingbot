@@ -77,6 +77,8 @@ PERP_TICKER_URL = "https://fapi.asterdex.com/fapi/v1/ticker/price?symbol=BTWUSDT
 
 DEFAULT_MAIL_TO = "2194667913@qq.com"
 DEFAULT_THRESHOLD = 0.20
+# 权益低于这个值时不记录基准：未入金时启动策略会让基准变成 0，之后任何回撤都算不出来。
+MIN_BASELINE_EQUITY = 1.0
 BASE_ASSET = "BTW"
 QUOTE_ASSET = "USDT"
 
@@ -379,6 +381,10 @@ def main() -> int:
     equity = account["equity"]
     baseline = args.baseline or state.get("baseline")
     if args.reset_baseline or not baseline:
+        if equity < MIN_BASELINE_EQUITY:
+            log({"event": "baseline_skipped", "reason": "equity below minimum",
+                 "equity": round(equity, 2), "min": MIN_BASELINE_EQUITY})
+            return 0
         state["baseline"] = equity
         state["baseline_at"] = now_iso()
         state.pop("triggered_at", None)
