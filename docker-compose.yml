@@ -16,6 +16,10 @@ services:
       - ./certs:/home/hummingbot/certs
       - ./scripts:/home/hummingbot/scripts
       - ./controllers:/home/hummingbot/controllers
+      # Aster connector is pure Python and lives outside the built image; mounting it keeps the
+      # container in sync with the repo without rebuilding the 5+ GB image for every change.
+      - ./hummingbot/connector/exchange/aster:/home/hummingbot/hummingbot/connector/exchange/aster
+    restart: unless-stopped
     logging:
       driver: "json-file"
       options:

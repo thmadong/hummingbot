@@ -1,0 +1,48 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# 存档示例：Aster 现货 BTW/USDT 做市配置（pmm_simple）
+#
+# 这份文件不进 hbot 的配置扫描（*.yml 被 conf/.gitignore 忽略，这里用 .yml.example
+# 后缀保留在仓库里备份），要实际使用请复制到 conf/controllers/ 下去掉后缀：
+#     cp conf_aster_btw_mm.yml.example conf/controllers/conf_aster_btw_mm.yml
+#
+# 设计依据（2026-10 BTW 永续实测）：
+#   5m ATR 1.13% / 15m ATR 2.64% / 1h ATR 3.17% / 日线 stdev 13.72%
+#   档位 6% ≈ 2.3× 15m ATR；最深 23% ≈ 1.7× 日波动
+#
+# 资金：总 2000 USDT = 单边 1000 USDT（买侧现金 / 卖侧 BTW 库存）
+# ⚠️ 卖侧必须提前持有 BTW（约 880-900 USDT 等值），否则卖单会被拒（-2018）
+# ⚠️ BTW 现货未上架或盘口只有单边时，中间价不可用，策略会空转
+# ─────────────────────────────────────────────────────────────────────────────
+
+id: aster-btw-mm-example
+controller_name: pmm_simple
+controller_type: market_making
+total_amount_quote: '2000'
+manual_kill_switch: false
+initial_positions: []
+connector_name: aster
+trading_pair: BTW-USDT
+
+# 10 档，价差 6% → 23%；前 5 档 +1.5% 步长，后 5 档 +2% 步长
+buy_spreads: 0.06,0.075,0.09,0.105,0.12,0.14,0.16,0.18,0.2,0.23
+sell_spreads: 0.06,0.075,0.09,0.105,0.12,0.14,0.16,0.18,0.2,0.23
+
+# 前重后轻（150/130/120/110/100/90/90/80/70/60 USDT），不做马丁格尔
+buy_amounts_pct: 15,13,12,11,10,9,9,8,7,6
+sell_amounts_pct: 15,13,12,11,10,9,9,8,7,6
+
+executor_refresh_time: 300
+cooldown_time: 120
+leverage: 1
+position_mode: HEDGE
+
+# 每笔三重屏障：+5% 挂单止盈（maker）、-12% 市价止损、12 小时超时了结
+stop_loss: '0.12'
+take_profit: '0.05'
+time_limit: 43200
+take_profit_order_type: 2
+trailing_stop: null
+position_rebalance_threshold_pct: '0.05'
+
+# 库存手动买入，禁止策略启动时市价扫单
+skip_rebalance: true
