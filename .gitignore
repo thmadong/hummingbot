@@ -108,6 +108,10 @@ coverage.xml
 .cursor/
 .agents/
 
+# Generated report artifacts (regenerable, not source)
+/.trae-html-share-packages/
+/aster-btw-depth/
+
 
 # GRVT
 /grvt
