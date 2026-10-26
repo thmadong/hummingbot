@@ -20,6 +20,10 @@ services:
       # container in sync with the repo without rebuilding the 5+ GB image for every change.
       - ./hummingbot/connector/exchange/aster:/home/hummingbot/hummingbot/connector/exchange/aster
     restart: unless-stopped
+    environment:
+      # Keep the mounted source dirs free of root-owned __pycache__ (it blocks git operations
+      # on the host, e.g. deleting/restoring directories during a pull).
+      - PYTHONDONTWRITEBYTECODE=1
     logging:
       driver: "json-file"
       options:
